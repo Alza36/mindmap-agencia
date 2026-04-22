@@ -6,7 +6,8 @@ import {
   X, Save, FileText, Image, Link2, Target, Zap, TrendingUp,
   User, Shield, Eye, Settings, Home, Network, GitBranch, Layout,
   PlayCircle, PauseCircle, MoreVertical, Share2, Bell, Hash,
-  Layers, Maximize2, Minimize2, RotateCcw, Copy
+  Layers, Maximize2, Minimize2, RotateCcw, Copy,
+  FolderOpen, FolderPlus, ArrowLeft, Briefcase, Sparkles
 } from 'lucide-react';
 
 export default function MindMapAgency() {
@@ -31,6 +32,8 @@ export default function MindMapAgency() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [showTeamModal, setShowTeamModal] = useState(false);
+  const [showHome, setShowHome] = useState(true); // começa sempre na tela inicial
+  const [editingProjectId, setEditingProjectId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saveStatus, setSaveStatus] = useState('saved'); // saving | saved
   const [notifications, setNotifications] = useState([]);
@@ -48,15 +51,7 @@ export default function MindMapAgency() {
           setProjects(data.projects || []);
           setTeam(data.team || []);
           setDarkMode(data.darkMode !== false);
-          if (data.currentProjectId) {
-            setCurrentProjectId(data.currentProjectId);
-            const projectRaw = localStorage.getItem(`mindmap:project:${data.currentProjectId}`);
-            if (projectRaw) {
-              const projectData = JSON.parse(projectRaw);
-              setNodes(projectData.nodes || []);
-              setLayoutStyle(projectData.layoutStyle || 'radial');
-            }
-          }
+          // Não carrega projeto automaticamente — fica na tela inicial
         } else {
           initializeDemo();
         }
@@ -69,6 +64,24 @@ export default function MindMapAgency() {
     loadData();
   }, []);
 
+  // Carrega nós do projeto quando um é selecionado
+  useEffect(() => {
+    if (!currentProjectId) {
+      setNodes([]);
+      return;
+    }
+    try {
+      const projectRaw = localStorage.getItem(`mindmap:project:${currentProjectId}`);
+      if (projectRaw) {
+        const projectData = JSON.parse(projectRaw);
+        setNodes(projectData.nodes || []);
+        setLayoutStyle(projectData.layoutStyle || 'radial');
+      }
+    } catch (e) {
+      console.error('Erro ao carregar projeto:', e);
+    }
+  }, [currentProjectId]);
+
   const initializeDemo = () => {
     const demoTeam = [
       { id: 't1', name: 'Ana Silva', role: 'Diretora Criativa', color: '#ec4899', avatar: 'AS', access: 'admin' },
@@ -79,9 +92,12 @@ export default function MindMapAgency() {
     const projectId = 'proj_' + Date.now();
     const demoProject = {
       id: projectId,
-      name: 'Projetos da Agência',
-      description: 'Visão geral dos projetos em andamento',
+      name: 'Projetos da Agência (Exemplo)',
+      description: 'Visão geral dos projetos em andamento — use este como modelo',
+      color: '#6366f1',
+      icon: 'briefcase',
       createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     const rootId = 'node_root';
     const demoNodes = [
@@ -133,8 +149,97 @@ export default function MindMapAgency() {
     ];
     setTeam(demoTeam);
     setProjects([demoProject]);
+    // Salva os nós do projeto demo no localStorage (mas não abre)
+    localStorage.setItem(`mindmap:project:${projectId}`, JSON.stringify({
+      nodes: demoNodes,
+      layoutStyle: 'radial',
+    }));
+  };
+
+  // ============ GERENCIAR PROJETOS ============
+  const createProject = (name, description, color, icon) => {
+    const projectId = 'proj_' + Date.now();
+    const rootId = 'node_root_' + Date.now();
+    const newProject = {
+      id: projectId,
+      name: name || 'Novo Mapa',
+      description: description || '',
+      color: color || '#6366f1',
+      icon: icon || 'briefcase',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const rootNode = {
+      id: rootId, parentId: null, title: name || 'Novo Mapa',
+      description: description || '', x: 0, y: 0,
+      color: color || '#6366f1', icon: icon || 'target', shape: 'hexagon', size: 'large',
+      tasks: [], attachments: [], comments: [], progress: 0,
+      manualProgress: null, expanded: true,
+    };
+    localStorage.setItem(`mindmap:project:${projectId}`, JSON.stringify({
+      nodes: [rootNode], layoutStyle: 'radial',
+    }));
+    setProjects([...projects, newProject]);
     setCurrentProjectId(projectId);
-    setNodes(demoNodes);
+    setShowHome(false);
+    return projectId;
+  };
+
+  const openProject = (projectId) => {
+    setCurrentProjectId(projectId);
+    setShowHome(false);
+    setCurrentView('map');
+    setSelectedNodeId(null);
+    setSidePanel(null);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const backToHome = () => {
+    setShowHome(true);
+    setCurrentProjectId(null);
+    setSelectedNodeId(null);
+    setSidePanel(null);
+  };
+
+  const renameProject = (projectId, newName, newDescription, newColor, newIcon) => {
+    setProjects(projects.map(p =>
+      p.id === projectId
+        ? { ...p, name: newName, description: newDescription, color: newColor, icon: newIcon, updatedAt: Date.now() }
+        : p
+    ));
+  };
+
+  const duplicateProject = (projectId) => {
+    const original = projects.find(p => p.id === projectId);
+    if (!original) return;
+    const newProjectId = 'proj_' + Date.now();
+    const newProject = {
+      ...original,
+      id: newProjectId,
+      name: original.name + ' (Cópia)',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    // Copia os nós
+    try {
+      const raw = localStorage.getItem(`mindmap:project:${projectId}`);
+      if (raw) {
+        localStorage.setItem(`mindmap:project:${newProjectId}`, raw);
+      }
+    } catch (e) {}
+    setProjects([...projects, newProject]);
+  };
+
+  const deleteProject = (projectId) => {
+    if (!confirm('Tem certeza que deseja excluir este mapa? Essa ação não pode ser desfeita.')) return;
+    try {
+      localStorage.removeItem(`mindmap:project:${projectId}`);
+    } catch (e) {}
+    setProjects(projects.filter(p => p.id !== projectId));
+    if (currentProjectId === projectId) {
+      backToHome();
+    }
   };
 
   // Auto-save com debounce (localStorage)
@@ -144,10 +249,17 @@ export default function MindMapAgency() {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       try {
+        // Atualiza o updatedAt do projeto atual se houver mudança nos nós
+        let projectsToSave = projects;
+        if (currentProjectId && nodes.length > 0) {
+          projectsToSave = projects.map(p =>
+            p.id === currentProjectId ? { ...p, updatedAt: Date.now() } : p
+          );
+        }
         localStorage.setItem('mindmap:projects', JSON.stringify({
-          projects, team, darkMode, currentProjectId,
+          projects: projectsToSave, team, darkMode, currentProjectId,
         }));
-        if (currentProjectId) {
+        if (currentProjectId && nodes.length > 0) {
           localStorage.setItem(`mindmap:project:${currentProjectId}`, JSON.stringify({
             nodes, layoutStyle,
           }));
@@ -488,6 +600,25 @@ export default function MindMapAgency() {
     );
   }
 
+  // Tela inicial: lista de mapas
+  if (showHome || !currentProjectId) {
+    return (
+      <HomeView
+        projects={projects}
+        theme={theme}
+        darkMode={darkMode}
+        setDarkMode={setDarkMode}
+        onOpen={openProject}
+        onCreate={createProject}
+        onRename={renameProject}
+        onDuplicate={duplicateProject}
+        onDelete={deleteProject}
+        editingProjectId={editingProjectId}
+        setEditingProjectId={setEditingProjectId}
+      />
+    );
+  }
+
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
   const visibleNodes = filterPerson
     ? nodesWithProgress.filter(n => (n.tasks || []).some(t => t.assignees?.includes(filterPerson)) || n.parentId === null)
@@ -531,12 +662,25 @@ export default function MindMapAgency() {
         padding: '10px 16px', borderBottom: `1px solid ${theme.border}`, background: theme.bgPanel, gap: 16, flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15 }}>
+          <button
+            onClick={backToHome}
+            title="Voltar aos meus mapas"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14,
+              background: 'transparent', border: 'none', color: theme.text, cursor: 'pointer',
+              padding: '4px 8px', borderRadius: 8,
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = theme.bgAlt}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <ArrowLeft size={16} />
             <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg, ${theme.accent}, #ec4899)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Network size={16} color="white" />
             </div>
-            MindMap Agência
-          </div>
+            <span style={{ fontSize: 13, color: theme.textDim }}>
+              {projects.find(p => p.id === currentProjectId)?.name || 'Mapa'}
+            </span>
+          </button>
           <div style={{ display: 'flex', gap: 4, background: theme.bgAlt, padding: 3, borderRadius: 8 }}>
             {[
               { id: 'map', icon: Network, label: 'Mapa' },
@@ -1373,6 +1517,514 @@ function TeamModal({ team, setTeam, theme, onClose }) {
             <button className="btn btn-icon" onClick={() => setTeam(team.filter(x => x.id !== p.id))}><Trash2 size={13} color="#ef4444" /></button>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// TELA INICIAL: LISTA DE MAPAS
+// ============================================================
+function HomeView({ projects, theme, darkMode, setDarkMode, onOpen, onCreate, onRename, onDuplicate, onDelete, editingProjectId, setEditingProjectId }) {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [sortBy, setSortBy] = useState('updated'); // updated | created | name
+  const [search, setSearch] = useState('');
+
+  const iconMap = { target: Target, zap: Zap, hash: Hash, layout: Layout, settings: Settings, briefcase: Briefcase, sparkles: Sparkles };
+
+  const sorted = [...projects].sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name);
+    if (sortBy === 'created') return (b.createdAt || 0) - (a.createdAt || 0);
+    return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+  });
+
+  const filtered = search
+    ? sorted.filter(p =>
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        (p.description || '').toLowerCase().includes(search.toLowerCase()))
+    : sorted;
+
+  // Estatísticas rápidas de cada projeto (lê do localStorage)
+  const getProjectStats = (projectId) => {
+    try {
+      const raw = localStorage.getItem(`mindmap:project:${projectId}`);
+      if (!raw) return { nodes: 0, tasks: 0, done: 0, progress: 0 };
+      const data = JSON.parse(raw);
+      const nodes = data.nodes || [];
+      const allTasks = nodes.flatMap(n => n.tasks || []);
+      const done = allTasks.filter(t => t.status === 'done').length;
+      const progress = allTasks.length > 0 ? Math.round((done / allTasks.length) * 100) : 0;
+      return { nodes: nodes.length, tasks: allTasks.length, done, progress };
+    } catch (e) {
+      return { nodes: 0, tasks: 0, done: 0, progress: 0 };
+    }
+  };
+
+  const formatDate = (ts) => {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMin < 1) return 'agora';
+    if (diffMin < 60) return `há ${diffMin} min`;
+    if (diffHours < 24) return `há ${diffHours}h`;
+    if (diffDays < 7) return `há ${diffDays} dias`;
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: theme.bg,
+      color: theme.text,
+      fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif",
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        * { box-sizing: border-box; }
+        .home-card { transition: all 0.2s ease; cursor: pointer; }
+        .home-card:hover { transform: translateY(-3px); box-shadow: 0 12px 36px rgba(0,0,0,0.15); }
+        .home-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; border: 1px solid ${theme.border}; background: ${theme.bgPanel}; color: ${theme.text}; cursor: pointer; font-size: 13px; font-weight: 500; font-family: inherit; transition: all 0.15s; }
+        .home-btn:hover { border-color: ${theme.accent}; background: ${theme.bgAlt}; }
+        .home-input { width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid ${theme.border}; background: ${theme.bgAlt}; color: ${theme.text}; font-size: 14px; outline: none; font-family: inherit; }
+        .home-input:focus { border-color: ${theme.accent}; }
+      `}</style>
+
+      {/* Cabeçalho */}
+      <div style={{
+        borderBottom: `1px solid ${theme.border}`,
+        background: theme.bgPanel,
+        padding: '20px 32px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: `linear-gradient(135deg, ${theme.accent}, #ec4899)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Network size={22} color="white" />
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 18, letterSpacing: -0.3 }}>MindMap Agência</div>
+            <div style={{ fontSize: 12, color: theme.textDim }}>Seus mapas mentais em um só lugar</div>
+          </div>
+        </div>
+        <button className="home-btn" onClick={() => setDarkMode(!darkMode)}>
+          {darkMode ? <Sun size={14} /> : <Moon size={14} />}
+          {darkMode ? 'Claro' : 'Escuro'}
+        </button>
+      </div>
+
+      {/* Conteúdo */}
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 32px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, letterSpacing: -0.8 }}>Meus Mapas</h1>
+            <p style={{ margin: '6px 0 0 0', color: theme.textDim, fontSize: 14 }}>
+              {projects.length} {projects.length === 1 ? 'mapa' : 'mapas'} {projects.length > 0 && '· clique para abrir'}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '12px 20px', borderRadius: 10, border: 'none',
+              background: `linear-gradient(135deg, ${theme.accent}, #ec4899)`,
+              color: 'white', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+              fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(139,92,246,0.3)',
+            }}
+          >
+            <Plus size={16} /> Novo Mapa
+          </button>
+        </div>
+
+        {/* Filtros */}
+        {projects.length > 0 && (
+          <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+              <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: theme.textDim }} />
+              <input
+                type="text"
+                placeholder="Buscar mapa..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="home-input"
+                style={{ paddingLeft: 36 }}
+              />
+            </div>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="home-input" style={{ width: 'auto', minWidth: 180 }}>
+              <option value="updated">Recentes primeiro</option>
+              <option value="created">Criação (novos)</option>
+              <option value="name">Ordem alfabética</option>
+            </select>
+          </div>
+        )}
+
+        {/* Grade de cards */}
+        {filtered.length === 0 ? (
+          <div style={{
+            textAlign: 'center', padding: '80px 20px',
+            background: theme.bgPanel, borderRadius: 16, border: `2px dashed ${theme.border}`,
+          }}>
+            <div style={{
+              width: 72, height: 72, borderRadius: 20, margin: '0 auto 20px',
+              background: `linear-gradient(135deg, ${theme.accent}22, ${theme.accent}11)`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <FolderPlus size={32} color={theme.accent} />
+            </div>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: 18 }}>
+              {search ? 'Nenhum mapa encontrado' : 'Comece seu primeiro mapa'}
+            </h3>
+            <p style={{ margin: '0 0 20px 0', color: theme.textDim, fontSize: 14 }}>
+              {search ? 'Tente outra busca' : 'Clique em "Novo Mapa" para criar seu primeiro projeto'}
+            </p>
+            {!search && (
+              <button className="home-btn" onClick={() => setShowCreateModal(true)} style={{ background: theme.accent, color: 'white', borderColor: theme.accent }}>
+                <Plus size={14} /> Criar Primeiro Mapa
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: 16,
+          }}>
+            {filtered.map(p => {
+              const Icon = iconMap[p.icon] || Briefcase;
+              const s = getProjectStats(p.id);
+              return (
+                <div
+                  key={p.id}
+                  className="home-card"
+                  onClick={() => onOpen(p.id)}
+                  style={{
+                    background: theme.bgPanel,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: 14,
+                    padding: 20,
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Faixa colorida no topo */}
+                  <div style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+                    background: `linear-gradient(90deg, ${p.color || theme.accent}, ${p.color || theme.accent}88)`,
+                  }} />
+
+                  {/* Cabeçalho do card */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
+                    <div style={{
+                      width: 44, height: 44, borderRadius: 12,
+                      background: `${p.color || theme.accent}22`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <Icon size={20} color={p.color || theme.accent} />
+                    </div>
+                    <ProjectMenu
+                      project={p}
+                      theme={theme}
+                      onRename={() => setEditingProjectId(p.id)}
+                      onDuplicate={() => onDuplicate(p.id)}
+                      onDelete={() => onDelete(p.id)}
+                    />
+                  </div>
+
+                  {/* Título e descrição */}
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, letterSpacing: -0.2 }}>{p.name}</div>
+                  <div style={{
+                    fontSize: 12, color: theme.textDim, marginBottom: 16,
+                    minHeight: 32,
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}>
+                    {p.description || 'Sem descrição'}
+                  </div>
+
+                  {/* Barra de progresso */}
+                  {s.tasks > 0 && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 11, color: theme.textDim }}>
+                        <span>Progresso</span>
+                        <span style={{ fontWeight: 600, color: theme.text }}>{s.progress}%</span>
+                      </div>
+                      <div style={{ height: 5, background: theme.bgAlt, borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${s.progress}%`, height: '100%',
+                          background: p.color || theme.accent, transition: 'width 0.3s',
+                        }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Estatísticas */}
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    paddingTop: 12, borderTop: `1px solid ${theme.border}`,
+                    fontSize: 11, color: theme.textDim,
+                  }}>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Network size={11} /> {s.nodes}
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <CheckCircle2 size={11} /> {s.done}/{s.tasks}
+                      </span>
+                    </div>
+                    <span>{formatDate(p.updatedAt || p.createdAt)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Rodapé */}
+        <div style={{
+          marginTop: 60, padding: 20, textAlign: 'center',
+          color: theme.textDim, fontSize: 12,
+        }}>
+          Seus dados são salvos automaticamente no navegador. Para backup, exporte o JSON dentro de cada mapa.
+        </div>
+      </div>
+
+      {/* Modal de criar */}
+      {showCreateModal && (
+        <ProjectModal
+          theme={theme}
+          title="Novo Mapa"
+          onSave={(name, desc, color, icon) => { onCreate(name, desc, color, icon); setShowCreateModal(false); }}
+          onClose={() => setShowCreateModal(false)}
+        />
+      )}
+
+      {/* Modal de editar */}
+      {editingProjectId && (() => {
+        const p = projects.find(x => x.id === editingProjectId);
+        if (!p) return null;
+        return (
+          <ProjectModal
+            theme={theme}
+            title="Editar Mapa"
+            initial={p}
+            onSave={(name, desc, color, icon) => { onRename(editingProjectId, name, desc, color, icon); setEditingProjectId(null); }}
+            onClose={() => setEditingProjectId(null)}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
+// Menu de 3 pontinhos em cada card
+function ProjectMenu({ project, theme, onRename, onDuplicate, onDelete }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    setTimeout(() => window.addEventListener('click', close), 0);
+    return () => window.removeEventListener('click', close);
+  }, [open]);
+
+  return (
+    <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(!open); }}
+        style={{
+          width: 30, height: 30, borderRadius: 8, border: `1px solid ${theme.border}`,
+          background: theme.bgPanel, cursor: 'pointer', color: theme.textDim,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <MoreVertical size={14} />
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, marginTop: 4,
+          background: theme.bgPanel, border: `1px solid ${theme.border}`,
+          borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+          minWidth: 160, zIndex: 10, overflow: 'hidden',
+        }}>
+          {[
+            { label: 'Renomear', icon: Edit3, action: onRename },
+            { label: 'Duplicar', icon: Copy, action: onDuplicate },
+            { label: 'Excluir', icon: Trash2, action: onDelete, danger: true },
+          ].map((item, i) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={i}
+                onClick={e => { e.stopPropagation(); setOpen(false); item.action(); }}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 14px', border: 'none', background: 'transparent',
+                  color: item.danger ? '#ef4444' : theme.text,
+                  cursor: 'pointer', fontSize: 13, textAlign: 'left',
+                  borderTop: i > 0 ? `1px solid ${theme.border}` : 'none',
+                  fontFamily: 'inherit',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = theme.bgAlt}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <Icon size={13} /> {item.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Modal de criar/editar projeto
+function ProjectModal({ theme, title, initial, onSave, onClose }) {
+  const [name, setName] = useState(initial?.name || '');
+  const [description, setDescription] = useState(initial?.description || '');
+  const [color, setColor] = useState(initial?.color || '#6366f1');
+  const [icon, setIcon] = useState(initial?.icon || 'briefcase');
+
+  const colors = ['#6366f1', '#ec4899', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981', '#ef4444', '#14b8a6'];
+  const icons = [
+    { id: 'briefcase', Icon: Briefcase },
+    { id: 'target', Icon: Target },
+    { id: 'zap', Icon: Zap },
+    { id: 'layout', Icon: Layout },
+    { id: 'hash', Icon: Hash },
+    { id: 'sparkles', Icon: Sparkles },
+    { id: 'settings', Icon: Settings },
+    { id: 'layers', Icon: Layers },
+  ];
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    onSave(name.trim(), description.trim(), color, icon);
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 100, padding: 20,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: theme.bgPanel, borderRadius: 14, padding: 28,
+          maxWidth: 500, width: '100%', border: `1px solid ${theme.border}`,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>{title}</h2>
+          <button
+            onClick={onClose}
+            style={{
+              width: 32, height: 32, borderRadius: 8, border: `1px solid ${theme.border}`,
+              background: 'transparent', color: theme.text, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <label style={{ display: 'block', fontSize: 12, color: theme.textDim, marginBottom: 6, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase' }}>Nome</label>
+        <input
+          autoFocus
+          value={name}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && name.trim()) handleSave(); }}
+          placeholder="Ex: Cliente X — Campanha Verão"
+          className="home-input"
+          style={{ marginBottom: 16 }}
+        />
+
+        <label style={{ display: 'block', fontSize: 12, color: theme.textDim, marginBottom: 6, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase' }}>Descrição (opcional)</label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          placeholder="Do que trata este mapa..."
+          rows={3}
+          className="home-input"
+          style={{ marginBottom: 16, resize: 'vertical', minHeight: 70, fontFamily: 'inherit' }}
+        />
+
+        <label style={{ display: 'block', fontSize: 12, color: theme.textDim, marginBottom: 8, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase' }}>Cor</label>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+          {colors.map(c => (
+            <button
+              key={c}
+              onClick={() => setColor(c)}
+              style={{
+                width: 36, height: 36, borderRadius: 18, background: c,
+                cursor: 'pointer',
+                border: color === c ? `3px solid ${theme.text}` : '3px solid transparent',
+                transition: 'transform 0.1s',
+              }}
+            />
+          ))}
+        </div>
+
+        <label style={{ display: 'block', fontSize: 12, color: theme.textDim, marginBottom: 8, fontWeight: 600, letterSpacing: 0.3, textTransform: 'uppercase' }}>Ícone</label>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+          {icons.map(ic => {
+            const Ic = ic.Icon;
+            const selected = icon === ic.id;
+            return (
+              <button
+                key={ic.id}
+                onClick={() => setIcon(ic.id)}
+                style={{
+                  width: 42, height: 42, borderRadius: 10,
+                  background: selected ? color : theme.bgAlt,
+                  color: selected ? 'white' : theme.textDim,
+                  border: selected ? `2px solid ${color}` : `1px solid ${theme.border}`,
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <Ic size={18} />
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '10px 18px', borderRadius: 8, border: `1px solid ${theme.border}`,
+              background: 'transparent', color: theme.text, cursor: 'pointer',
+              fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!name.trim()}
+            style={{
+              padding: '10px 20px', borderRadius: 8, border: 'none',
+              background: name.trim() ? `linear-gradient(135deg, ${color}, ${color}cc)` : theme.border,
+              color: 'white', cursor: name.trim() ? 'pointer' : 'not-allowed',
+              fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+              opacity: name.trim() ? 1 : 0.5,
+            }}
+          >
+            {initial ? 'Salvar alterações' : 'Criar Mapa'}
+          </button>
+        </div>
       </div>
     </div>
   );
